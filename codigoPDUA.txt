@@ -1,0 +1,202 @@
+; ===== CONFIGURACIÓN DE DIRECCIONES =====
+; Q      = 0x20 (Multiplicando, parte baja del resultado)
+; M      = 0x21 (Multiplicador)
+; Q-1    = 0x1F (Bit anterior de Q)
+; var_A  = 0x10 (Parte alta del resultado)
+; cont   = 0x08 (Contador de iteraciones = 8)
+; Temp   = 0x30 (Temporal para propagación de bit)
+
+; ===== INICIALIZACIÓN =====
+; Inicializar contador en 8
+MOV ACC, CTE    ; Cargar constante en el acumulador
+0x08            ; Valor 8 (para 8 bits)
+MOV DPTR, ACC   ; Mover valor a puntero de datos
+MOV [DPTR], ACC ; Guardar en dirección de contador (0x08)
+
+; Inicializar Q-1 en 0
+MOV ACC, CTE    ; Cargar constante 0
+0x00            ; Valor 0
+MOV DPTR, CTE   ; Cargar dirección fija
+0x1F            ; Dirección de Q-1
+MOV [DPTR], ACC ; Guardar 0 en Q-1
+
+; Inicializar var_A en 0
+MOV ACC, CTE    ; Cargar constante 0
+0x00            ; Valor 0
+MOV DPTR, CTE   ; Cargar dirección fija
+0x10            ; Dirección de var_A
+MOV [DPTR], ACC ; Guardar 0 en var_A
+
+; ===== BUCLE PRINCIPAL =====
+init_loop:
+; --- Comparar Q[0] y Q-1 ---
+MOV ACC, CTE    ; Cargar dirección de Q
+0x20            ; Dirección de Q (0x20)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de Q
+AND ACC, 0x01   ; Obtener bit menos significativo (Q[0])
+MOV A, ACC      ; Guardar Q[0] en registro A
+
+MOV ACC, CTE    ; Cargar dirección de Q-1
+0x1F            ; Dirección de Q-1 (0x1F)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de Q-1
+SUB ACC, A      ; Comparar Q[0] con Q-1 (ACC = Q-1 - Q[0])
+JZ skip_sum_rest; Si son iguales (resultado 0), saltar suma/resta
+
+JNC do_sub      ; Si hay carry (Q[0] < Q-1), saltar a resta
+                ; Si no hay carry (Q[0] > Q-1), continuar con suma
+
+; --- SUMA (Q[0]=1 y Q-1=0) ---
+MOV ACC, CTE    ; Cargar dirección de var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de var_A
+MOV A, ACC      ; Guardar var_A en registro A
+
+MOV ACC, CTE    ; Cargar dirección de M
+0x21            ; Dirección M (0x21)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de M
+ADD ACC, A      ; Sumar M a var_A (ACC = var_A + M)
+MOV A, ACC      ; Guardar resultado en A
+
+MOV ACC, CTE    ; Cargar dirección de var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV [DPTR], A   ; Guardar nuevo valor en var_A
+JMP shift       ; Saltar a desplazamiento
+
+do_sub:
+; --- RESTA (Q[0]=0 y Q-1=1) ---
+MOV ACC, CTE    ; Cargar dirección de M
+0x21            ; Dirección M (0x21)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de M
+INV ACC         ; Invertir bits (complemento a 1)
+MOV A, ACC      ; Guardar en A
+MOV ACC, CTE    ; Cargar constante 1
+0x01            ; Valor 1
+ADD ACC, A      ; Complemento a 2 (ACC = -M)
+MOV A, ACC      ; Guardar -M en A
+
+MOV ACC, CTE    ; Cargar dirección var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de var_A
+ADD ACC, A      ; Restar M de var_A (ACC = var_A - M)
+MOV A, ACC      ; Guardar resultado en A
+
+MOV ACC, CTE    ; Cargar dirección var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV [DPTR], A   ; Guardar nuevo valor en var_A
+
+skip_sum_rest:
+; ===== DESPLAZAMIENTO ARITMÉTICO =====
+; --- Guardar bit 7 de var_A ---
+MOV ACC, CTE    ; Cargar dirección var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de var_A
+; Desplazar 7 veces a la izquierda para llevar el bit 7 a posición 0
+LSL ACC         ; Desplazamiento izquierda 1
+LSL ACC         ; Desplazamiento izquierda 2
+LSL ACC         ; Desplazamiento izquierda 3
+LSL ACC         ; Desplazamiento izquierda 4
+LSL ACC         ; Desplazamiento izquierda 5
+LSL ACC         ; Desplazamiento izquierda 6
+LSL ACC         ; Desplazamiento izquierda 7
+AND ACC, 0x80   ; Aislar bit de signo
+MOV A, ACC      ; Guardar bit de signo en A
+
+MOV ACC, CTE    ; Cargar dirección temporal
+0x30            ; Dirección Temp (0x30)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV [DPTR], A   ; Guardar bit de signo en Temp
+
+; --- Desplazamiento derecho var_A ---
+MOV ACC, CTE    ; Cargar dirección var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de var_A
+LSR ACC         ; Desplazamiento aritmético derecho
+MOV A, ACC      ; Guardar resultado en A
+MOV DPTR, CTE   ; Cargar dirección fija
+0x10            ; Dirección var_A (0x10)
+MOV [DPTR], A   ; Guardar var_A desplazado
+
+; --- Desplazamiento Q con propagación de bit ---
+MOV ACC, CTE    ; Cargar dirección Q
+0x20            ; Dirección Q (0x20)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de Q
+LSR ACC         ; Desplazamiento derecho lógico
+MOV Temp, ACC   ; Guardar Q>>1 en Temp (pseudoinstrucción)
+
+MOV ACC, CTE    ; Cargar dirección Temp
+0x30            ; Dirección Temp (0x30)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV A, [DPTR]   ; Cargar bit de signo guardado
+; Desplazar 7 veces a la derecha para llevar el bit a posición 7
+LSL ACC         ; Desplazamiento izquierda 1
+LSL ACC         ; Desplazamiento izquierda 2
+LSL ACC         ; Desplazamiento izquierda 3
+LSL ACC         ; Desplazamiento izquierda 4
+LSL ACC         ; Desplazamiento izquierda 5
+LSL ACC         ; Desplazamiento izquierda 6
+LSL ACC         ; Desplazamiento izquierda 7
+MOV B, ACC      ; Guardar bit en posición MSB en B
+
+MOV ACC, Temp   ; Cargar Q>>1
+OR ACC, B       ; Combinar con bit de signo
+MOV A, ACC      ; Guardar resultado en A
+
+MOV DPTR, CTE   ; Cargar dirección fija
+0x20            ; Dirección Q (0x20)
+MOV [DPTR], A   ; Guardar nuevo valor de Q
+
+; --- Actualizar Q-1 con Q[0] anterior ---
+MOV ACC, CTE    ; Cargar dirección Q
+0x20            ; Dirección Q (0x20)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor de Q
+AND ACC, 0x01   ; Obtener nuevo Q[0]
+MOV A, ACC      ; Guardar en A
+MOV DPTR, CTE   ; Cargar dirección fija
+0x1F            ; Dirección Q-1 (0x1F)
+MOV [DPTR], A   ; Actualizar Q-1
+
+; ===== CONTROL DE ITERACIONES =====
+; --- Decrementar contador ---
+MOV ACC, CTE    ; Cargar constante -1
+0xFF            ; Valor -1 (en complemento a 2)
+MOV A, ACC      ; Guardar en A
+MOV ACC, CTE    ; Cargar dirección contador
+0x08            ; Dirección contador (0x08)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar valor del contador
+ADD ACC, A      ; Decrementar contador (ACC = contador - 1)
+MOV A, ACC      ; Guardar nuevo valor en A
+MOV DPTR, CTE   ; Cargar dirección fija
+0x08            ; Dirección contador (0x08)
+MOV [DPTR], A   ; Guardar contador actualizado
+MOV ACC, A      ; Mover a ACC para comparar
+JZ end          ; Si contador = 0, terminar
+JMP init_loop   ; Repetir bucle
+
+; ===== FINALIZACIÓN =====
+end:
+; Mostrar resultado en registros
+MOV ACC, CTE    ; Cargar dirección var_A
+0x10            ; Dirección var_A (0x10)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar parte alta del resultado
+MOV A, ACC      ; Mover a registro A para visualización
+
+MOV ACC, CTE    ; Cargar dirección Q
+0x20            ; Dirección Q (0x20)
+MOV DPTR, ACC   ; Mover a puntero de datos
+MOV ACC, [DPTR] ; Cargar parte baja del resultado (en ACC)
+
+HALT            ; Terminar ejecución
